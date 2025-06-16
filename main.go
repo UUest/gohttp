@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/UUest/internal/database"
+	"github.com/UUest/gohttp/internal/database"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )

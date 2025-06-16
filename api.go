@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"sync/atomic"
 
-	"github.com/UUest/internal/database"
+	"github.com/UUest/gohttp/internal/database"
 )
 
 func readiness(w http.ResponseWriter, r *http.Request) {
