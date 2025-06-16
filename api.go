@@ -96,14 +96,7 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type chirp struct {
-		ID        uuid.UUID `json:"id"`
-		CreatedAt time.Time `json:"created_at"`
-		UpdatedAt time.Time `json:"updated_at"`
-		Body      string    `json:"body"`
-		UserID    uuid.UUID `json:"user_id"`
-	}
-	chirpParams := chirp{}
+	chirpParams := database.CreateChirpParams{}
 	valid := true
 	if len(reqParams.Body) > 140 {
 		chirpParams.Body = "Chirp is too long"
@@ -117,20 +110,34 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 	} else {
 		chirpParams.Body = reqParams.Body
 	}
-	chirpParams.CreatedAt = time.Now()
-	chirpParams.UpdatedAt = time.Now()
 	chirpParams.ID = uuid.New()
 	chirpParams.UserID = reqParams.UserID
-	dat, err := json.Marshal(chirpParams)
+
+	newChirp, err := cfg.dbQueries.CreateChirp(r.Context(), chirpParams)
+	type resParameters struct {
+		Id         uuid.UUID `json:"id"`
+		Body       string    `json:"body"`
+		Created_at time.Time `json:"created_at"`
+		Updated_at time.Time `json:"updated_at"`
+		User_id    uuid.UUID `json:"user_id"`
+	}
+	resParams := resParameters{
+		Id:         newChirp.ID,
+		Body:       newChirp.Body,
+		Created_at: newChirp.CreatedAt,
+		Updated_at: newChirp.UpdatedAt,
+		User_id:    newChirp.UserID,
+	}
+	res, err := json.Marshal(resParams)
 	if err != nil {
 		log.Printf("failed to marshal response body: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	if valid == false {
-		respondWithError(w, http.StatusBadRequest, dat)
+		respondWithError(w, http.StatusBadRequest, res)
 	} else {
-		respondWithJSON(w, http.StatusCreated, dat)
+		respondWithJSON(w, http.StatusCreated, res)
 	}
 }
 
