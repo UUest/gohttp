@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"regexp"
 	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/UUest/gohttp/internal/database"
 )
@@ -17,9 +20,9 @@ func readiness(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("OK"))
 }
 
-func respondWithJSON(w http.ResponseWriter, dat []byte) {
+func respondWithJSON(w http.ResponseWriter, status int, dat []byte) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	w.Write(dat)
 }
 
@@ -49,6 +52,7 @@ func chirpCleaner(chirp string) (string, bool) {
 type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries      *database.Queries
+	platform       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -78,9 +82,10 @@ func (cfg *apiConfig) resetMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Metrics reset"))
 }
 
-func (cfg *apiConfig) validateChirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 	type reqParameters struct {
-		Body string `json:"body"`
+		Body   string    `json:"body"`
+		UserID uuid.UUID `json:"user_id"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	reqParams := reqParameters{}
@@ -91,25 +96,73 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	type resParameters struct {
-		Error       string `json:"error"`
-		Valid       bool   `json:"valid"`
-		Body        string `json:"body"`
-		CleanedBody string `json:"cleaned_body"`
+	type chirp struct {
+		ID        uuid.UUID `json:"id"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+		Body      string    `json:"body"`
+		UserID    uuid.UUID `json:"user_id"`
 	}
-	resParams := resParameters{}
+	chirpParams := chirp{}
+	valid := true
 	if len(reqParams.Body) > 140 {
-		resParams.Error = "Chirp is too long"
+		chirpParams.Body = "Chirp is too long"
+		valid = false
 	} else {
-		resParams.Valid = true
-		resParams.Body = reqParams.Body
+		chirpParams.Body = reqParams.Body
 	}
-	_, rep := chirpCleaner(resParams.Body)
+	_, rep := chirpCleaner(chirpParams.Body)
 	if rep == true {
-		resParams.CleanedBody, _ = chirpCleaner(resParams.Body)
+		chirpParams.Body, _ = chirpCleaner(chirpParams.Body)
 	} else {
-		resParams.Body = reqParams.Body
-		resParams.CleanedBody = reqParams.Body
+		chirpParams.Body = reqParams.Body
+	}
+	chirpParams.CreatedAt = time.Now()
+	chirpParams.UpdatedAt = time.Now()
+	chirpParams.ID = uuid.New()
+	chirpParams.UserID = reqParams.UserID
+	dat, err := json.Marshal(chirpParams)
+	if err != nil {
+		log.Printf("failed to marshal response body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if valid == false {
+		respondWithError(w, http.StatusBadRequest, dat)
+	} else {
+		respondWithJSON(w, http.StatusCreated, dat)
+	}
+}
+
+func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
+	type reqParameters struct {
+		Email string `json:"email"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	reqParams := reqParameters{}
+	err := decoder.Decode(&reqParams)
+	if err != nil {
+		log.Printf("failed to decode request body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	newUser, err := cfg.dbQueries.CreateUser(r.Context(), reqParams.Email)
+	if err != nil {
+		log.Printf("failed to create user: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	type resParameters struct {
+		Id         uuid.UUID `json:"id"`
+		Created_at time.Time `json:"created_at"`
+		Updated_at time.Time `json:"updated_at"`
+		Email      string    `json:"email"`
+	}
+	resParams := resParameters{
+		Id:         newUser.ID,
+		Created_at: newUser.CreatedAt,
+		Updated_at: newUser.UpdatedAt,
+		Email:      newUser.Email,
 	}
 	dat, err := json.Marshal(resParams)
 	if err != nil {
@@ -117,9 +170,20 @@ func (cfg *apiConfig) validateChirp(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if resParams.Error != "" {
-		respondWithError(w, http.StatusBadRequest, dat)
+	respondWithJSON(w, http.StatusCreated, dat)
+}
+
+func (cfg *apiConfig) deleteAllUsers(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform == "dev" {
+		log.Printf("deleting all users")
+		err := cfg.dbQueries.DeleteAllUsers(r.Context())
+		if err != nil {
+			log.Printf("failed to delete all users: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		respondWithJSON(w, http.StatusOK, nil)
 	} else {
-		respondWithJSON(w, dat)
+		respondWithError(w, http.StatusForbidden, nil)
 	}
 }

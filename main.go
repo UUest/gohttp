@@ -14,6 +14,7 @@ import (
 
 func main() {
 	godotenv.Load()
+	platform := os.Getenv("PLATFORM")
 	dbUrl := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbUrl)
 	if err != nil {
@@ -27,12 +28,14 @@ func main() {
 	}
 	cfg := &apiConfig{
 		dbQueries: database.New(db),
+		platform:  platform,
 	}
 	mux.HandleFunc("GET /api/healthz", readiness)
 	mux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
 	mux.HandleFunc("GET /admin/metrics", cfg.writeMetricsResponse)
-	mux.HandleFunc("POST /admin/reset", cfg.resetMetrics)
-	mux.HandleFunc("POST /api/validate_chirp", cfg.validateChirp)
+	mux.HandleFunc("POST /admin/reset", cfg.deleteAllUsers)
+	mux.HandleFunc("POST /api/users", cfg.createUser)
+	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
 	server.ListenAndServe()
 	defer server.Shutdown(context.Background())
 }
