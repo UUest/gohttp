@@ -194,3 +194,37 @@ func (cfg *apiConfig) deleteAllUsers(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusForbidden, nil)
 	}
 }
+
+func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
+	log.Printf("getting all chirps")
+	chirps, err := cfg.dbQueries.GetChirps(r.Context())
+	if err != nil {
+		log.Printf("failed to get all chirps: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	type resParameters struct {
+		Id         uuid.UUID `json:"id"`
+		Body       string    `json:"body"`
+		Created_at time.Time `json:"created_at"`
+		Updated_at time.Time `json:"updated_at"`
+		User_id    uuid.UUID `json:"user_id"`
+	}
+	var resParams []resParameters
+	for _, chirp := range chirps {
+		resParams = append(resParams, resParameters{
+			Id:         chirp.ID,
+			Body:       chirp.Body,
+			Created_at: chirp.CreatedAt,
+			Updated_at: chirp.UpdatedAt,
+			User_id:    chirp.UserID,
+		})
+	}
+	dat, err := json.Marshal(resParams)
+	if err != nil {
+		log.Printf("failed to marshal response body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, dat)
+}

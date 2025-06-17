@@ -36,6 +36,7 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", cfg.deleteAllUsers)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
 	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
+	mux.HandleFunc("GET /api/chirps", cfg.getChirps)
 	server.ListenAndServe()
 	defer server.Shutdown(context.Background())
 }
