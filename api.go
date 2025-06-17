@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/UUest/gohttp/internal/auth"
 	"github.com/UUest/gohttp/internal/database"
 )
 
@@ -143,7 +144,8 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 	type reqParameters struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	reqParams := reqParameters{}
@@ -153,7 +155,17 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	newUser, err := cfg.dbQueries.CreateUser(r.Context(), reqParams.Email)
+	hashedPassword, err := auth.HashPassword(reqParams.Password)
+	if err != nil {
+		log.Printf("failed to hash password: %s", err)
+		respondWithError(w, http.StatusBadRequest, []byte("unable to hash password"))
+		return
+	}
+	userParams := database.CreateUserParams{
+		Email:          reqParams.Email,
+		HashedPassword: hashedPassword,
+	}
+	newUser, err := cfg.dbQueries.CreateUser(r.Context(), userParams)
 	if err != nil {
 		log.Printf("failed to create user: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -257,6 +269,52 @@ func (cfg *apiConfig) getChirpByID(w http.ResponseWriter, r *http.Request) {
 		User_id:    chirp.UserID,
 	}
 	dat, err := json.Marshal(resParam)
+	if err != nil {
+		log.Printf("failed to marshal response body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, dat)
+}
+
+func (cfg *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
+	type reqParameters struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	reqParams := reqParameters{}
+	err := decoder.Decode(&reqParams)
+	if err != nil {
+		log.Printf("failed to decode request body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	user, err := cfg.dbQueries.GetUserByEmail(r.Context(), reqParams.Email)
+	if err != nil {
+		log.Printf("failed to get user by email: %s\n", err)
+		respondWithError(w, http.StatusNotFound, []byte("user not found"))
+		return
+	}
+	err = auth.CheckPasswordHash(user.HashedPassword, reqParams.Password)
+	if err != nil {
+		log.Printf("failed to check password hash: %s", err)
+		respondWithError(w, http.StatusUnauthorized, []byte("Incorrect email or password"))
+		return
+	}
+	type resParameters struct {
+		Id         uuid.UUID `json:"id"`
+		Created_at time.Time `json:"created_at"`
+		Updated_at time.Time `json:"updated_at"`
+		Email      string    `json:"email"`
+	}
+	resParams := resParameters{
+		Id:         user.ID,
+		Created_at: user.CreatedAt,
+		Updated_at: user.UpdatedAt,
+		Email:      user.Email,
+	}
+	dat, err := json.Marshal(resParams)
 	if err != nil {
 		log.Printf("failed to marshal response body: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)

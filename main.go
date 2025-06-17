@@ -38,6 +38,7 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", cfg.createChirp)
 	mux.HandleFunc("GET /api/chirps", cfg.getChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirpByID)
+	mux.HandleFunc("POST /api/login", cfg.loginUser)
 	server.ListenAndServe()
 	defer server.Shutdown(context.Background())
 }
