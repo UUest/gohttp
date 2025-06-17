@@ -228,3 +228,39 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
 	}
 	respondWithJSON(w, http.StatusOK, dat)
 }
+
+func (cfg *apiConfig) getChirpByID(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("chirpID")
+	chirpUUID := uuid.MustParse(id)
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, nil)
+		return
+	}
+	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), chirpUUID)
+	if err != nil {
+		log.Printf("failed to get chirp by id: %s", err)
+		respondWithError(w, http.StatusNotFound, nil)
+		return
+	}
+	type resParameters struct {
+		Id         uuid.UUID `json:"id"`
+		Body       string    `json:"body"`
+		Created_at time.Time `json:"created_at"`
+		Updated_at time.Time `json:"updated_at"`
+		User_id    uuid.UUID `json:"user_id"`
+	}
+	resParam := resParameters{
+		Id:         chirp.ID,
+		Body:       chirp.Body,
+		Created_at: chirp.CreatedAt,
+		Updated_at: chirp.UpdatedAt,
+		User_id:    chirp.UserID,
+	}
+	dat, err := json.Marshal(resParam)
+	if err != nil {
+		log.Printf("failed to marshal response body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, dat)
+}
