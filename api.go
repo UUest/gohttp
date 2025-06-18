@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -179,16 +180,18 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type resParameters struct {
-		Id         uuid.UUID `json:"id"`
-		Created_at time.Time `json:"created_at"`
-		Updated_at time.Time `json:"updated_at"`
-		Email      string    `json:"email"`
+		Id          uuid.UUID `json:"id"`
+		Created_at  time.Time `json:"created_at"`
+		Updated_at  time.Time `json:"updated_at"`
+		Email       string    `json:"email"`
+		IsChirpyRed bool      `json:"is_chirpy_red"`
 	}
 	resParams := resParameters{
-		Id:         newUser.ID,
-		Created_at: newUser.CreatedAt,
-		Updated_at: newUser.UpdatedAt,
-		Email:      newUser.Email,
+		Id:          newUser.ID,
+		Created_at:  newUser.CreatedAt,
+		Updated_at:  newUser.UpdatedAt,
+		Email:       newUser.Email,
+		IsChirpyRed: newUser.ChirpyRed.Bool,
 	}
 	dat, err := json.Marshal(resParams)
 	if err != nil {
@@ -343,6 +346,7 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
 		Email        string    `json:"email"`
 		Token        string    `json:"token,omitempty"`
 		RefreshToken string    `json:"refresh_token,omitempty"`
+		IsChirpyRed  bool      `json:"is_chirpy_red"`
 	}
 	resParams := resParameters{
 		Id:           user.ID,
@@ -351,6 +355,7 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
 		Email:        user.Email,
 		Token:        token,
 		RefreshToken: newRefreshToken.Token,
+		IsChirpyRed:  user.ChirpyRed.Bool,
 	}
 	dat, err := json.Marshal(resParams)
 	if err != nil {
@@ -481,16 +486,18 @@ func (cfg *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type resParameters struct {
-		Id         uuid.UUID `json:"id"`
-		Created_at time.Time `json:"created_at"`
-		Updated_at time.Time `json:"updated_at"`
-		Email      string    `json:"email"`
+		Id          uuid.UUID `json:"id"`
+		Created_at  time.Time `json:"created_at"`
+		Updated_at  time.Time `json:"updated_at"`
+		Email       string    `json:"email"`
+		IsChirpyRed bool      `json:"is_chirpy_red"`
 	}
 	resParams := resParameters{
-		Id:         updatedUser.ID,
-		Created_at: updatedUser.CreatedAt,
-		Updated_at: updatedUser.UpdatedAt,
-		Email:      updatedUser.Email,
+		Id:          updatedUser.ID,
+		Created_at:  updatedUser.CreatedAt,
+		Updated_at:  updatedUser.UpdatedAt,
+		Email:       updatedUser.Email,
+		IsChirpyRed: updatedUser.ChirpyRed.Bool,
 	}
 	dat, err := json.Marshal(resParams)
 	if err != nil {
@@ -532,4 +539,45 @@ func (cfg *apiConfig) deleteChirpByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondWithJSON(w, http.StatusNoContent, nil)
+}
+
+func (cfg *apiConfig) updateUserChirpyRed(w http.ResponseWriter, r *http.Request) {
+	type reqParameters struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	reqParams := reqParameters{}
+	err := decoder.Decode(&reqParams)
+	if err != nil {
+		log.Printf("failed to decode request body: %s", err)
+		respondWithError(w, http.StatusBadRequest, nil)
+		return
+	}
+	_, err = cfg.dbQueries.GetUserByID(r.Context(), uuid.MustParse(reqParams.Data.UserID))
+	if err != nil {
+		log.Printf("failed to get user by id: %s", err)
+		respondWithError(w, http.StatusNotFound, nil)
+		return
+	}
+	if reqParams.Event != "user.upgraded" {
+		respondWithError(w, http.StatusNoContent, nil)
+		return
+	}
+	if reqParams.Event == "user.upgraded" {
+		redParams := database.UpdateUserChirpyRedParams{
+			ID:        uuid.MustParse(reqParams.Data.UserID),
+			ChirpyRed: sql.NullBool{Bool: true, Valid: true},
+		}
+		_, err = cfg.dbQueries.UpdateUserChirpyRed(r.Context(), redParams)
+		if err != nil {
+			log.Printf("failed to update user chirpy red: %s", err)
+			respondWithError(w, http.StatusInternalServerError, nil)
+			return
+		}
+		respondWithJSON(w, http.StatusNoContent, nil)
+		return
+	}
 }

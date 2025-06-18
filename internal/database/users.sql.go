@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,7 +16,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, created_at, updated_at, email, hashed_password)
 VALUES (gen_random_uuid(), NOW(), NOW(), $1, $2)
-RETURNING id, created_at, updated_at, email
+RETURNING id, created_at, updated_at, email, chirpy_red
 `
 
 type CreateUserParams struct {
@@ -28,6 +29,7 @@ type CreateUserRow struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Email     string
+	ChirpyRed sql.NullBool
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateUserRow, error) {
@@ -38,6 +40,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (CreateU
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
+		&i.ChirpyRed,
 	)
 	return i, err
 }
@@ -52,7 +55,7 @@ func (q *Queries) DeleteAllUsers(ctx context.Context) error {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, created_at, updated_at, email, hashed_password
+SELECT id, created_at, updated_at, email, hashed_password, chirpy_red
 FROM users
 WHERE email = $1
 `
@@ -66,12 +69,33 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.ChirpyRed,
+	)
+	return i, err
+}
+
+const getUserByID = `-- name: GetUserByID :one
+SELECT id, created_at, updated_at, email, hashed_password, chirpy_red
+FROM users
+WHERE id = $1
+`
+
+func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
+		&i.ChirpyRed,
 	)
 	return i, err
 }
 
 const getUserByRefreshToken = `-- name: GetUserByRefreshToken :one
-SELECT users.id, users.created_at, users.updated_at, users.email, users.hashed_password
+SELECT users.id, users.created_at, users.updated_at, users.email, users.hashed_password, users.chirpy_red
 FROM users
 JOIN refresh_tokens ON users.id = refresh_tokens.user_id
 WHERE refresh_tokens.token = $1
@@ -86,6 +110,7 @@ func (q *Queries) GetUserByRefreshToken(ctx context.Context, token string) (User
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.ChirpyRed,
 	)
 	return i, err
 }
@@ -96,7 +121,7 @@ SET email = $1,
     hashed_password = $2,
     updated_at = NOW()
 WHERE id = $3
-RETURNING id, created_at, updated_at, email
+RETURNING id, created_at, updated_at, email, chirpy_red
 `
 
 type UpdateUserParams struct {
@@ -110,6 +135,7 @@ type UpdateUserRow struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Email     string
+	ChirpyRed sql.NullBool
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
@@ -120,6 +146,41 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateU
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
+		&i.ChirpyRed,
+	)
+	return i, err
+}
+
+const updateUserChirpyRed = `-- name: UpdateUserChirpyRed :one
+UPDATE users
+SET chirpy_red = $1,
+    updated_at = NOW()
+WHERE id = $2
+RETURNING id, created_at, updated_at, email, chirpy_red
+`
+
+type UpdateUserChirpyRedParams struct {
+	ChirpyRed sql.NullBool
+	ID        uuid.UUID
+}
+
+type UpdateUserChirpyRedRow struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Email     string
+	ChirpyRed sql.NullBool
+}
+
+func (q *Queries) UpdateUserChirpyRed(ctx context.Context, arg UpdateUserChirpyRedParams) (UpdateUserChirpyRedRow, error) {
+	row := q.db.QueryRowContext(ctx, updateUserChirpyRed, arg.ChirpyRed, arg.ID)
+	var i UpdateUserChirpyRedRow
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.ChirpyRed,
 	)
 	return i, err
 }
