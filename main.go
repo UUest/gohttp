@@ -14,6 +14,7 @@ import (
 
 func main() {
 	godotenv.Load()
+	jwtSecret := os.Getenv("JWT_SECRET")
 	platform := os.Getenv("PLATFORM")
 	dbUrl := os.Getenv("DB_URL")
 	db, err := sql.Open("postgres", dbUrl)
@@ -29,6 +30,7 @@ func main() {
 	cfg := &apiConfig{
 		dbQueries: database.New(db),
 		platform:  platform,
+		jwtSecret: jwtSecret,
 	}
 	mux.HandleFunc("GET /api/healthz", readiness)
 	mux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))

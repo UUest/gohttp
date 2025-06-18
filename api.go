@@ -54,6 +54,7 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	dbQueries      *database.Queries
 	platform       string
+	jwtSecret      string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -84,19 +85,25 @@ func (cfg *apiConfig) resetMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		log.Printf("failed to validate JWTToken: %s", err)
+		respondWithError(w, http.StatusUnauthorized, nil)
+		return
+	}
 	type reqParameters struct {
 		Body   string    `json:"body"`
 		UserID uuid.UUID `json:"user_id"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	reqParams := reqParameters{}
-	err := decoder.Decode(&reqParams)
+	err = decoder.Decode(&reqParams)
 	if err != nil {
 		log.Printf("failed to decode request body: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
 	chirpParams := database.CreateChirpParams{}
 	valid := true
 	if len(reqParams.Body) > 140 {
@@ -112,7 +119,7 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 		chirpParams.Body = reqParams.Body
 	}
 	chirpParams.ID = uuid.New()
-	chirpParams.UserID = reqParams.UserID
+	chirpParams.UserID = userID
 
 	newChirp, err := cfg.dbQueries.CreateChirp(r.Context(), chirpParams)
 	type resParameters struct {
@@ -279,8 +286,9 @@ func (cfg *apiConfig) getChirpByID(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
 	type reqParameters struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Email            string `json:"email"`
+		Password         string `json:"password"`
+		ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	reqParams := reqParameters{}
@@ -302,17 +310,33 @@ func (cfg *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusUnauthorized, []byte("Incorrect email or password"))
 		return
 	}
+	if reqParams.ExpiresInSeconds == 0 || reqParams.ExpiresInSeconds > 3600 {
+		reqParams.ExpiresInSeconds = 3600
+	}
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, time.Duration(reqParams.ExpiresInSeconds)*time.Second)
+	if err != nil {
+		log.Printf("failed to make JWT: %s", err)
+		respondWithError(w, http.StatusInternalServerError, []byte("failed to make JWT"))
+		return
+	}
+	if token == "" {
+		log.Printf("failed to make JWT: %s", err)
+		respondWithError(w, http.StatusInternalServerError, []byte("failed to make JWT"))
+		return
+	}
 	type resParameters struct {
 		Id         uuid.UUID `json:"id"`
 		Created_at time.Time `json:"created_at"`
 		Updated_at time.Time `json:"updated_at"`
 		Email      string    `json:"email"`
+		Token      string    `json:"token,omitempty"`
 	}
 	resParams := resParameters{
 		Id:         user.ID,
 		Created_at: user.CreatedAt,
 		Updated_at: user.UpdatedAt,
 		Email:      user.Email,
+		Token:      token,
 	}
 	dat, err := json.Marshal(resParams)
 	if err != nil {

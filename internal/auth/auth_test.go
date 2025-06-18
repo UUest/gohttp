@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -419,5 +420,22 @@ func BenchmarkValidateJWT(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer token")
+
+	token, err := GetBearerToken(req.Header)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if token != "token" {
+		t.Errorf("Expected token 'token', got '%s'", token)
 	}
 }
