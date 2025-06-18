@@ -500,3 +500,36 @@ func (cfg *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	respondWithJSON(w, http.StatusOK, dat)
 }
+
+func (cfg *apiConfig) deleteChirpByID(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		log.Printf("failed to validate JWTToken: %s", err)
+		respondWithError(w, http.StatusUnauthorized, nil)
+		return
+	}
+	id := r.PathValue("chirpID")
+	chirpUUID := uuid.MustParse(id)
+	if id == "" {
+		respondWithError(w, http.StatusBadRequest, nil)
+		return
+	}
+	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), chirpUUID)
+	if err != nil {
+		log.Printf("failed to get chirp by id: %s", err)
+		respondWithError(w, http.StatusNotFound, nil)
+		return
+	}
+	if chirp.UserID != userID {
+		respondWithError(w, http.StatusForbidden, nil)
+		return
+	}
+	err = cfg.dbQueries.DeleteChirpByID(r.Context(), chirpUUID)
+	if err != nil {
+		log.Printf("failed to delete chirp by id: %s", err)
+		respondWithError(w, http.StatusInternalServerError, nil)
+		return
+	}
+	respondWithJSON(w, http.StatusNoContent, nil)
+}
