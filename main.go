@@ -41,6 +41,8 @@ func main() {
 	mux.HandleFunc("GET /api/chirps", cfg.getChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.getChirpByID)
 	mux.HandleFunc("POST /api/login", cfg.loginUser)
+	mux.HandleFunc("POST /api/refresh", cfg.RefreshToken)
+	mux.HandleFunc("POST /api/revoke", cfg.RevokeToken)
 	server.ListenAndServe()
 	defer server.Shutdown(context.Background())
 }
