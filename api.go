@@ -442,3 +442,61 @@ func (cfg *apiConfig) RevokeToken(w http.ResponseWriter, r *http.Request) {
 	}
 	respondWithJSON(w, http.StatusNoContent, nil)
 }
+
+func (cfg *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		log.Printf("failed to validate JWTToken: %s", err)
+		respondWithError(w, http.StatusUnauthorized, nil)
+		return
+	}
+	type reqParameters struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	reqParams := reqParameters{}
+	err = decoder.Decode(&reqParams)
+	if err != nil {
+		log.Printf("failed to decode request body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	hashedPassword, err := auth.HashPassword(reqParams.Password)
+	if err != nil {
+		log.Printf("failed to hash password: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	updateParams := database.UpdateUserParams{
+		ID:             userID,
+		Email:          reqParams.Email,
+		HashedPassword: hashedPassword,
+	}
+	updatedUser, err := cfg.dbQueries.UpdateUser(r.Context(), updateParams)
+	if err != nil {
+		log.Printf("failed to update user: %s", err)
+		respondWithError(w, http.StatusInternalServerError, []byte("failed to update user"))
+		return
+	}
+	type resParameters struct {
+		Id         uuid.UUID `json:"id"`
+		Created_at time.Time `json:"created_at"`
+		Updated_at time.Time `json:"updated_at"`
+		Email      string    `json:"email"`
+	}
+	resParams := resParameters{
+		Id:         updatedUser.ID,
+		Created_at: updatedUser.CreatedAt,
+		Updated_at: updatedUser.UpdatedAt,
+		Email:      updatedUser.Email,
+	}
+	dat, err := json.Marshal(resParams)
+	if err != nil {
+		log.Printf("failed to marshal response body: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, dat)
+}

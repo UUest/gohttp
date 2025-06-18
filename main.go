@@ -43,6 +43,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", cfg.loginUser)
 	mux.HandleFunc("POST /api/refresh", cfg.RefreshToken)
 	mux.HandleFunc("POST /api/revoke", cfg.RevokeToken)
+	mux.HandleFunc("PUT /api/users", cfg.updateUser)
 	server.ListenAndServe()
 	defer server.Shutdown(context.Background())
 }
