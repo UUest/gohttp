@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -219,37 +220,76 @@ func (cfg *apiConfig) deleteAllUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
-	log.Printf("getting all chirps")
-	chirps, err := cfg.dbQueries.GetChirps(r.Context())
-	if err != nil {
-		log.Printf("failed to get all chirps: %s", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	authID := r.URL.Query().Get("author_id")
+	sortOrder := r.URL.Query().Get("sort")
+	if authID == "" {
+		log.Printf("getting all chirps")
+		chirps, err := cfg.dbQueries.GetChirps(r.Context())
+		if err != nil {
+			log.Printf("failed to get all chirps: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		type resParameters struct {
+			Id         uuid.UUID `json:"id"`
+			Body       string    `json:"body"`
+			Created_at time.Time `json:"created_at"`
+			Updated_at time.Time `json:"updated_at"`
+			User_id    uuid.UUID `json:"user_id"`
+		}
+		var resParams []resParameters
+		for _, chirp := range chirps {
+			resParams = append(resParams, resParameters{
+				Id:         chirp.ID,
+				Body:       chirp.Body,
+				Created_at: chirp.CreatedAt,
+				Updated_at: chirp.UpdatedAt,
+				User_id:    chirp.UserID,
+			})
+		}
+		if sortOrder == "desc" {
+			sort.Slice(resParams, func(i, j int) bool { return resParams[i].Created_at.After(resParams[j].Created_at) })
+		}
+		dat, err := json.Marshal(resParams)
+		if err != nil {
+			log.Printf("failed to marshal response body: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		respondWithJSON(w, http.StatusOK, dat)
+	} else {
+		log.Printf("getting all chirps for userID: %s\n", authID)
+		chirps, err := cfg.dbQueries.GetChirpsByID(r.Context(), uuid.MustParse(authID))
+		if err != nil {
+			log.Printf("failed to get all chirps: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		type resParameters struct {
+			Id         uuid.UUID `json:"id"`
+			Body       string    `json:"body"`
+			Created_at time.Time `json:"created_at"`
+			Updated_at time.Time `json:"updated_at"`
+			User_id    uuid.UUID `json:"user_id"`
+		}
+		var resParams []resParameters
+		for _, chirp := range chirps {
+			resParams = append(resParams, resParameters{
+				Id:         chirp.ID,
+				Body:       chirp.Body,
+				Created_at: chirp.CreatedAt,
+				Updated_at: chirp.UpdatedAt,
+				User_id:    chirp.UserID,
+			})
+		}
+		dat, err := json.Marshal(resParams)
+		if err != nil {
+			log.Printf("failed to marshal response body: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		respondWithJSON(w, http.StatusOK, dat)
 	}
-	type resParameters struct {
-		Id         uuid.UUID `json:"id"`
-		Body       string    `json:"body"`
-		Created_at time.Time `json:"created_at"`
-		Updated_at time.Time `json:"updated_at"`
-		User_id    uuid.UUID `json:"user_id"`
-	}
-	var resParams []resParameters
-	for _, chirp := range chirps {
-		resParams = append(resParams, resParameters{
-			Id:         chirp.ID,
-			Body:       chirp.Body,
-			Created_at: chirp.CreatedAt,
-			Updated_at: chirp.UpdatedAt,
-			User_id:    chirp.UserID,
-		})
-	}
-	dat, err := json.Marshal(resParams)
-	if err != nil {
-		log.Printf("failed to marshal response body: %s", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	respondWithJSON(w, http.StatusOK, dat)
 }
 
 func (cfg *apiConfig) getChirpByID(w http.ResponseWriter, r *http.Request) {
