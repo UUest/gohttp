@@ -56,6 +56,7 @@ type apiConfig struct {
 	dbQueries      *database.Queries
 	platform       string
 	jwtSecret      string
+	polkaKey       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -542,6 +543,16 @@ func (cfg *apiConfig) deleteChirpByID(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) updateUserChirpyRed(w http.ResponseWriter, r *http.Request) {
+	apiKey, err := auth.GetApiKey(r.Header)
+	if err != nil {
+		log.Printf("failed to get bearer token: %s", err)
+		respondWithError(w, http.StatusUnauthorized, nil)
+		return
+	}
+	if apiKey != cfg.polkaKey {
+		respondWithError(w, http.StatusForbidden, nil)
+		return
+	}
 	type reqParameters struct {
 		Event string `json:"event"`
 		Data  struct {
@@ -550,7 +561,7 @@ func (cfg *apiConfig) updateUserChirpyRed(w http.ResponseWriter, r *http.Request
 	}
 	decoder := json.NewDecoder(r.Body)
 	reqParams := reqParameters{}
-	err := decoder.Decode(&reqParams)
+	err = decoder.Decode(&reqParams)
 	if err != nil {
 		log.Printf("failed to decode request body: %s", err)
 		respondWithError(w, http.StatusBadRequest, nil)
